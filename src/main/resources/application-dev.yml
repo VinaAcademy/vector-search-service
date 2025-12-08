@@ -1,0 +1,15 @@
+# Development Environment Configuration
+server:
+  port: 8085
+
+spring:
+  application:
+    name: vector-search-service
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+    hostname: localhost
