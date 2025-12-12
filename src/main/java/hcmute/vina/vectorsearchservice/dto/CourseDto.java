@@ -49,5 +49,10 @@ public class CourseDto extends BaseDto {
     private long totalSection;
 
     private long totalLesson;
+    
+    private float relevanceScore;
+
+    // Distance from query embedding (cosine distance: 1 - cosine_similarity)
+    private double distance;
 
 }

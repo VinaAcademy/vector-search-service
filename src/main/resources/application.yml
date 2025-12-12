@@ -27,4 +27,4 @@ eureka:
     lease-expiration-duration-in-seconds: 30
     metadata-map:
       version: ${project.version:0.0.1-SNAPSHOT}
-      description: Text-to-Speech Service using Azure Cognitive Services
+      description: Vector search service
