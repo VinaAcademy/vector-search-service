@@ -1,10 +1,8 @@
 package hcmute.vina.vectorsearchservice.service.rerank;
 
-import java.io.IOException;
-import java.util.List;
-
 import ai.djl.huggingface.tokenizers.Encoding;
 import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer;
+
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
@@ -12,80 +10,84 @@ import ai.djl.translate.Batchifier;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorContext;
 
-public class BgeRerankerTranslator implements Translator<RankInput, Float> {
+import java.io.IOException;
+import java.util.List;
+
+public class BgeRerankerTranslator implements Translator<RankInput[], float[]> {
 
     private HuggingFaceTokenizer tokenizer;
-    // CRITICAL: Must match model's trace length (512 exactly) to avoid TorchScript shape errors
-    // Padding/truncation to fixed length ensures tensor shapes are predictable
-    private final int maxLength = 512; 
+
+    // BGE Reranker v2-m3 (XLM-R architecture) -> pad token ALWAYS id = 1
+    private static final long PAD_TOKEN_ID = 1;
+
+    public BgeRerankerTranslator() {
+    }
 
     @Override
     public void prepare(TranslatorContext ctx) throws IOException {
-        // Model name trên HuggingFace
         tokenizer = HuggingFaceTokenizer.newInstance("BAAI/bge-reranker-v2-m3");
     }
 
     @Override
-    public NDList processInput(TranslatorContext ctx, RankInput input) {
-        try {
-            // Pair encoding for BAAI/bge-reranker: query and document
-            Encoding encoding = tokenizer.encode(input.query(), input.doc());
-            
-            NDManager manager = ctx.getNDManager();
+    public NDList processInput(TranslatorContext ctx, RankInput[] batch) throws Exception {
+        NDManager manager = ctx.getNDManager();
+        int batchSize = batch.length;
 
-            long[] inputIds = encoding.getIds();
-            long[] attentionMask = encoding.getAttentionMask();
+        Encoding[] encs = new Encoding[batchSize];
+        int maxLen = 0;
 
-            // Truncate and pad to fixed maxLength
-            int lengthToCopy = Math.min(inputIds.length, maxLength);
-            long[] paddedIds = new long[maxLength];
-            long[] paddedMask = new long[maxLength];
-
-            System.arraycopy(inputIds, 0, paddedIds, 0, lengthToCopy);
-            System.arraycopy(attentionMask, 0, paddedMask, 0, lengthToCopy);
-
-            // Batch dimension [1, maxLength]
-            NDArray idsArray = manager.create(paddedIds).expandDims(0);
-            NDArray maskArray = manager.create(paddedMask).expandDims(0);
-
-            // Name inputs to help TorchScript binding
-            idsArray.setName("input_ids");
-            maskArray.setName("attention_mask");
-
-            return new NDList(idsArray, maskArray);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to process input for reranking: " + e.getMessage(), e);
+        for (int i = 0; i < batchSize; ++i) {
+            encs[i] = tokenizer.encode(batch[i].getQuery(), batch[i].getDocument());
+            int len = safeLength(encs[i]);
+            if (len > maxLen) maxLen = len;
         }
+
+        long[][] ids2d = new long[batchSize][maxLen];
+        long[][] mask2d = new long[batchSize][maxLen];
+
+        for (int i = 0; i < batchSize; ++i) {
+            long[] ids = safeLongArray(encs[i].getIds());
+            long[] attn = safeLongArray(encs[i].getAttentionMask());
+
+            for (int j = 0; j < maxLen; ++j) {
+                if (j < ids.length) {
+                    ids2d[i][j] = ids[j];
+                    mask2d[i][j] = j < attn.length ? attn[j] : 1;
+                } else {
+                    ids2d[i][j] = PAD_TOKEN_ID;
+                    mask2d[i][j] = 0;
+                }
+            }
+        }
+
+        NDArray idsArr = manager.create(ids2d);
+        NDArray maskArr = manager.create(mask2d);
+        return new NDList(idsArr, maskArr);
     }
 
     @Override
-    public Float processOutput(TranslatorContext ctx, NDList list) {
+    public float[] processOutput(TranslatorContext ctx, NDList list) {
+        NDArray logits = list.get(0); // [batch, 1] hoặc [batch]
         try {
-            // Get the output tensor (logits)
-            NDArray output = list.get(0);
-            
-            // Handle different output shapes
-            float logits;
-            if (output.getShape().dimension() > 0) {
-                logits = output.getFloat(0);
-            } else {
-                logits = output.getFloat();
-            }
-            
-            // Apply sigmoid to convert logits to probability [0, 1]
-            float probability = (float) (1.0 / (1.0 + Math.exp(-logits)));
-            
-            // Ensure valid range
-            return Math.max(0.0f, Math.min(1.0f, probability));
+            return logits.squeeze(-1).toFloatArray();
         } catch (Exception e) {
-            System.err.println("⚠️ Error processing reranker output: " + e.getMessage());
-            return 0.5f; // Return neutral score on error
+            return logits.toFloatArray();
         }
     }
 
     @Override
     public Batchifier getBatchifier() {
-        // Disable DJL batching to avoid TorchScript fixed-shape issues
-        return Batchifier.STACK;
+        return null;
+    }
+
+    // -------- helpers --------
+
+    private int safeLength(Encoding e) {
+        try { return e.getIds().length; } catch (Exception ignore) {}
+        return 0;
+    }
+
+    private long[] safeLongArray(long[] arr) {
+        return arr != null ? arr : new long[0];
     }
 }

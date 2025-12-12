@@ -35,7 +35,7 @@ public class CourseSearchEventListener {
                     nullToEmpty(courseEmbeddedEvent.getTitle()),
                     nullToEmpty(courseEmbeddedEvent.getDescription()),
                     nullToEmpty(courseEmbeddedEvent.getInstructorName())
-            ).trim();
+            );
 
             float[] vector = embeddingService.toFloatArray(embeddingService.createEmbedding(text));
 

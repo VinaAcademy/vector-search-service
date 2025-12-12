@@ -25,11 +25,16 @@ public class CourseController {
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "2") int size,
+            @RequestParam(required = false) Boolean semantic,
             @ModelAttribute CourseSearchRequest req 
     ) {
         // Gán keyword từ param nếu có
         if (keyword != null && !keyword.isEmpty()) {
             req.setKeyword(keyword);
+        }
+        // Gán semantic từ param nếu có
+        if (semantic != null) {
+            req.setSemantic(semantic);
         }
 
         List<CourseDto> results = courseSearchService.search(req, page, size);

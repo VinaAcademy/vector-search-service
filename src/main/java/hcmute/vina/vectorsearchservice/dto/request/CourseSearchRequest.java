@@ -28,4 +28,5 @@ public class CourseSearchRequest {
     private BigDecimal maxPrice;
     private Double minRating;
     private CourseStatus status;
+    private Boolean semantic; // true to enable reranker
 }

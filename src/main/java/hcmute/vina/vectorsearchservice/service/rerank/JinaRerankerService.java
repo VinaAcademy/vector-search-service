@@ -6,7 +6,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +32,14 @@ public class JinaRerankerService {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    
+    // LRU cache for rerank results
+    private final Map<String, List<ScoredDocument>> rerankCache = new LinkedHashMap<String, List<ScoredDocument>>(100, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, List<ScoredDocument>> eldest) {
+            return size() > 100; // Keep last 100 rerank results
+        }
+    };
 
     public JinaRerankerService() {
         this.httpClient = HttpClient.newBuilder()
@@ -50,7 +60,7 @@ public class JinaRerankerService {
             return;
         }
 
-        System.out.println("Jina AI Reranker configured (supports 100+ languages including Vietnamese)");
+        System.out.println("Jina AI Reranker configured ");
     }
 
     public List<ScoredDocument> batchRerank(String query, List<String> docs) {
@@ -64,10 +74,22 @@ public class JinaRerankerService {
             return result;
         }
 
+        // Generate cache key from query and documents
+        String cacheKey = generateCacheKey(query, docs);
+        
+        // Check cache first
+        synchronized (rerankCache) {
+            List<ScoredDocument> cached = rerankCache.get(cacheKey);
+            if (cached != null) {
+                System.out.println("Rerank cache hit for query: " + query.substring(0, Math.min(50, query.length())));
+                return new ArrayList<>(cached); // Return copy to avoid external modification
+            }
+        }
+
         try {
             // Build request payload
             ObjectNode requestBody = objectMapper.createObjectNode();
-            requestBody.put("model", "jina-reranker-v2-base-multilingual");
+            requestBody.put("model", "jina-reranker-v3"); //jina-reranker-v2-base-multilingual 
             requestBody.put("query", query);
             
             ArrayNode documentsArray = objectMapper.createArrayNode();
@@ -82,7 +104,7 @@ public class JinaRerankerService {
                     .uri(URI.create("https://api.jina.ai/v1/rerank"))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer " + jinaApiKey)
-                    .timeout(Duration.ofSeconds(30))
+                    .timeout(Duration.ofSeconds(5))
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody.toString()))
                     .build();
 
@@ -111,6 +133,11 @@ public class JinaRerankerService {
 
             // Sort by score descending
             result.sort((a, b) -> Float.compare(b.getScore(), a.getScore()));
+            
+            // Cache the result
+            synchronized (rerankCache) {
+                rerankCache.put(cacheKey, new ArrayList<>(result));
+            }
 
         } catch (Exception e) {
             System.err.println("Failed to call Jina Reranker API: " + e.getMessage());
@@ -119,8 +146,18 @@ public class JinaRerankerService {
 
         return result;
     }
+    
+    private String generateCacheKey(String query, List<String> docs) {
+        // Create a deterministic key from query + document hashes
+        StringBuilder key = new StringBuilder(query.trim().toLowerCase());
+        key.append("|docs:");
+        for (String doc : docs) {
+            key.append(doc.hashCode()).append(",");
+        }
+        return key.toString();
+    }
 
     public boolean isAvailable() {
-        return rerankEnabled && jinaApiKey != null && !jinaApiKey.isBlank();
+        return jinaApiKey != null && !jinaApiKey.isBlank();
     }
 }

@@ -95,7 +95,7 @@ public class EmbeddingServiceImpl implements EmbeddingService{
         if (text == null) {
             text = "";
         }
-        String normalized = text.trim();
+        String normalized = text.trim().toLowerCase();
         List<Float> cached = embeddingCache.get(normalized);
         if (cached != null) {
             return cached;
@@ -107,7 +107,6 @@ public class EmbeddingServiceImpl implements EmbeddingService{
                 .build();
 
         CreateEmbeddingResponse response = client.embeddings().create(params);
-
         List<Float> vector = response
                 .data()
                 .get(0)

@@ -4,7 +4,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -15,6 +14,7 @@ import hcmute.vina.vectorsearchservice.builder.CourseSqlBuilder;
 import hcmute.vina.vectorsearchservice.dto.CourseDto;
 import hcmute.vina.vectorsearchservice.dto.request.CourseSearchRequest;
 import hcmute.vina.vectorsearchservice.mapper.CourseRowMapper;
+import hcmute.vina.vectorsearchservice.service.rerank.BgeRerankerService;
 import hcmute.vina.vectorsearchservice.service.rerank.JinaRerankerService;
 import hcmute.vina.vectorsearchservice.service.rerank.ScoredDocument;
 import lombok.RequiredArgsConstructor;
@@ -25,10 +25,11 @@ public class CourseSearchServiceImpl implements CourseSearchService{
 
     private final JdbcTemplate jdbcTemplate;
     private final EmbeddingService embeddingService;
+    private final BgeRerankerService bge;
     private final JinaRerankerService rerankerService; // Jina API reranker (multilingual)
 
     @Value("${search.rerank.enabled:true}")
-    private boolean rerankEnabled;
+    private boolean rerankEnabledDefault;
 
     @Override
     public List<CourseDto> search(CourseSearchRequest req, int page, int size) {
@@ -41,9 +42,11 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         if (candidates.isEmpty()) {
             return Collections.emptyList();
         }
-
+ 
         // 2. Hybrid search: combine vector + BM25 + rerank
-        boolean useRerank = rerankEnabled && rerankerService != null && rerankerService.isAvailable() && page == 0;
+        // Use request parameter if provided, otherwise use config default
+        boolean useSemanticRerank = req.getSemantic() != null ? req.getSemantic() : rerankEnabledDefault;
+        boolean useRerank = useSemanticRerank && rerankerService != null && rerankerService.isAvailable() && page == 0;
         List<CourseDto> rankedCandidates = useRerank
             ? hybridSearchWithRerank(candidates, req.getKeyword())
             : hybridSearch(candidates, req.getKeyword());
@@ -56,13 +59,13 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         Map<String, Object> params = new HashMap<>();
         String whereClause = CourseSqlBuilder.buildWhere(req, params);
 
-        String keyword = expandedQuery;
-        if (keyword == null || keyword.trim().isEmpty()) {
+        String keyword = expandedQuery.trim().toLowerCase();
+        if (keyword == null || keyword.isEmpty()) {
             keyword = "";
         }
         long current = System.currentTimeMillis();
         float[] embedding = embeddingService.toFloatArray(
-                embeddingService.createEmbedding(keyword.trim())
+                embeddingService.createEmbedding(keyword)
         );
 //        float[] embedding = 
 //                embeddingService.createEmbedding3(keyword.trim());
@@ -126,7 +129,7 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         }
 
         // Limit rerank to top-K nearest by vector
-        int topRerank = Math.min(candidates.size(), 30);
+        int topRerank = Math.min(candidates.size(), 20);
         List<String> documents = candidates.subList(0, topRerank).stream()
                 .map(this::buildCourseText)
                 .collect(java.util.stream.Collectors.toList());
@@ -153,10 +156,10 @@ public class CourseSearchServiceImpl implements CourseSearchService{
 
             // Exact title match gets priority
             String title = course.getName() == null ? "" : normalizeText(course.getName());
-            if (!title.isEmpty() && title.equals(kw)) {
-                course.setRelevanceScore(0.99f);
-                continue;
-            }
+//            if (!title.isEmpty() && title.equals(kw)) {
+//                course.setRelevanceScore(0.99f);
+//                continue;
+//            }
 
             // Hybrid with Rerank: Rerank (55%) + Vector (20%) + BM25 (15%) + Quality (10%)
             float finalScore = (rerankScore * 0.55f) + (vectorScore * 0.20f) + (bm25Score * 0.15f) + (quality * 0.10f);

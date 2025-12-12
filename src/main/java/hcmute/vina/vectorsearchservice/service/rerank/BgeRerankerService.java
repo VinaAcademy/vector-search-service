@@ -1,52 +1,48 @@
 package hcmute.vina.vectorsearchservice.service.rerank;
 
-import java.util.ArrayList;
-import java.util.List;
-
+import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
 import ai.djl.inference.Predictor;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ZooModel;
 import ai.djl.training.util.ProgressBar;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import ai.djl.translate.TranslateException;
 
 @Service
 public class BgeRerankerService {
 
-    private ZooModel<RankInput, Float> model;
-    private Predictor<RankInput, Float> predictor;
+    private ZooModel<RankInput[], float[]> model;
+    private Predictor<RankInput[], float[]> predictor;
 
-    @Value("${search.rerank.enabled:false}")
+    @Value("${search.rerank:true}")
     private boolean rerankEnabled;
+
+    @Value("${search.rerank.batchSize:32}")
+    private int batchSize;
 
     @PostConstruct
     public void init() {
         if (!rerankEnabled) {
-            System.out.println("Reranker disabled in config (search.rerank.enabled=false)");
             predictor = null;
             model = null;
             return;
         }
-
         try {
-            System.out.println("Loading BGE Reranker v2-m3 (multilingual)...");
-            Criteria<RankInput, Float> criteria = Criteria.builder()
-                .setTypes(RankInput.class, Float.class)
-                // BAAI/bge-reranker-v2-m3: Multilingual reranker supporting 100+ languages
-                .optModelUrls("djl://ai.djl.huggingface.pytorch/BAAI/bge-reranker-v2-m3")
-                .optEngine("PyTorch")
-                .optTranslator(new BgeRerankerTranslator())
-                .optProgress(new ProgressBar())
-                .build();
+            Criteria<RankInput[], float[]> criteria = Criteria.builder()
+                    .setTypes(RankInput[].class, float[].class)
+                    .optModelUrls("djl://ai.djl.huggingface.pytorch/BAAI/bge-reranker-v2-m3")
+                    .optEngine("PyTorch")
+                    .optTranslator(new BgeRerankerTranslator())
+                    .optProgress(new ProgressBar())
+                    .build();
 
             model = criteria.loadModel();
             predictor = model.newPredictor();
-            System.out.println("BGE Reranker v2-m3 loaded successfully (supports Vietnamese, English, Chinese, and 100+ languages)");
+            System.out.println("BGE Reranker loaded.");
         } catch (Exception e) {
-            System.err.println("Failed to load BGE Reranker v2-m3: " + e.getMessage());
             e.printStackTrace();
             predictor = null;
             model = null;
@@ -54,30 +50,40 @@ public class BgeRerankerService {
     }
 
     public List<ScoredDocument> batchRerank(String query, List<String> docs) {
-        List<ScoredDocument> result = new ArrayList<>();
+        List<ScoredDocument> out = new ArrayList<>();
+        if (predictor == null) return out;
 
-        if (predictor == null) {
-            return result;
-        }
+        // create RankInput array
+        RankInput[] all = docs.stream().map(d -> new RankInput(query, d)).toArray(RankInput[]::new);
 
-        // No internal batching; iterate and predict per item to avoid TorchScript shape issues
-        for (int i = 0; i < docs.size(); i++) {
-            try {
-                RankInput input = new RankInput(query, docs.get(i));
-                Float score = predictor.predict(input);
-                if (score != null && !score.isNaN() && !score.isInfinite()) {
-                    result.add(new ScoredDocument(i, docs.get(i), score));
-                } else {
-                    result.add(new ScoredDocument(i, docs.get(i), 0.5f));
-                }
-            } catch (Exception e) {
-                System.err.println("Rerank failed for doc " + i + ": " + e.getMessage());
-                result.add(new ScoredDocument(i, docs.get(i), 0.5f));
+        try {
+            float[] scores = predictWithChunking(all, batchSize);
+            for (int i = 0; i < docs.size(); ++i) {
+                out.add(new ScoredDocument(i, docs.get(i), scores[i]));
             }
+            out.sort((a, b) -> Float.compare(b.getScore(), a.getScore()));
+            return out;
+        } catch (Exception e) {
+            e.printStackTrace();
+            // fallback: return unchanged with default score
+            for (int i = 0; i < docs.size(); ++i) {
+                out.add(new ScoredDocument(i, docs.get(i), 0.5f));
+            }
+            return out;
         }
+    }
 
-        result.sort((a, b) -> Float.compare(b.getScore(), a.getScore()));
-        return result;
+    private float[] predictWithChunking(RankInput[] all, int chunkSize) throws TranslateException {
+        List<Float> acc = new ArrayList<>();
+        for (int i = 0; i < all.length; i += chunkSize) {
+            int end = Math.min(all.length, i + chunkSize);
+            RankInput[] sub = Arrays.copyOfRange(all, i, end);
+            float[] part = predictor.predict(sub);
+            for (float v : part) acc.add(v);
+        }
+        float[] res = new float[acc.size()];
+        for (int i = 0; i < res.length; ++i) res[i] = acc.get(i);
+        return res;
     }
 
     @PreDestroy
