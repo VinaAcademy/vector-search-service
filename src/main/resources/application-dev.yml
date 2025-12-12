@@ -59,7 +59,11 @@ eureka:
 
 openai:
   api:
-    key: ${OPENAI_API_KEY}
+    key: ${OPENAI_API_KEY:}
+
+jina:
+  api:
+    key: ${JINA_API_KEY:}
 
 # Search Configuration
 search:

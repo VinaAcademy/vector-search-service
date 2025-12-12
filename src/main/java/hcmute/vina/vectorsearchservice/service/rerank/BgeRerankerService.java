@@ -25,26 +25,28 @@ public class BgeRerankerService {
     @PostConstruct
     public void init() {
         if (!rerankEnabled) {
-            System.out.println("ℹ️ Reranker disabled in config (search.rerank.enabled=false)");
+            System.out.println("Reranker disabled in config (search.rerank.enabled=false)");
             predictor = null;
             model = null;
             return;
         }
 
         try {
+            System.out.println("Loading BGE Reranker v2-m3 (multilingual)...");
             Criteria<RankInput, Float> criteria = Criteria.builder()
-                    .setTypes(RankInput.class, Float.class)
-                    .optModelUrls("djl://ai.djl.huggingface.pytorch/BAAI/bge-reranker-v2-m3")
-                    .optEngine("PyTorch")
-                    .optTranslator(new BgeRerankerTranslator())
-                    .optProgress(new ProgressBar())
-                    .build();
+                .setTypes(RankInput.class, Float.class)
+                // BAAI/bge-reranker-v2-m3: Multilingual reranker supporting 100+ languages
+                .optModelUrls("djl://ai.djl.huggingface.pytorch/BAAI/bge-reranker-v2-m3")
+                .optEngine("PyTorch")
+                .optTranslator(new BgeRerankerTranslator())
+                .optProgress(new ProgressBar())
+                .build();
 
             model = criteria.loadModel();
             predictor = model.newPredictor();
-            System.out.println("✅ BAAI/bge-reranker-v2-m3 (multilingual) loaded");
+            System.out.println("BGE Reranker v2-m3 loaded successfully (supports Vietnamese, English, Chinese, and 100+ languages)");
         } catch (Exception e) {
-            System.err.println("⚠️ Failed to load Reranker: " + e.getMessage());
+            System.err.println("Failed to load BGE Reranker v2-m3: " + e.getMessage());
             e.printStackTrace();
             predictor = null;
             model = null;
@@ -69,7 +71,7 @@ public class BgeRerankerService {
                     result.add(new ScoredDocument(i, docs.get(i), 0.5f));
                 }
             } catch (Exception e) {
-                System.err.println("⚠️ Rerank failed for doc " + i + ": " + e.getMessage());
+                System.err.println("Rerank failed for doc " + i + ": " + e.getMessage());
                 result.add(new ScoredDocument(i, docs.get(i), 0.5f));
             }
         }

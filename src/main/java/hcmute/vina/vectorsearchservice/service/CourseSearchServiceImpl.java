@@ -15,7 +15,7 @@ import hcmute.vina.vectorsearchservice.builder.CourseSqlBuilder;
 import hcmute.vina.vectorsearchservice.dto.CourseDto;
 import hcmute.vina.vectorsearchservice.dto.request.CourseSearchRequest;
 import hcmute.vina.vectorsearchservice.mapper.CourseRowMapper;
-import hcmute.vina.vectorsearchservice.service.rerank.BgeRerankerService;
+import hcmute.vina.vectorsearchservice.service.rerank.JinaRerankerService;
 import hcmute.vina.vectorsearchservice.service.rerank.ScoredDocument;
 import lombok.RequiredArgsConstructor;
 
@@ -25,30 +25,30 @@ public class CourseSearchServiceImpl implements CourseSearchService{
 
     private final JdbcTemplate jdbcTemplate;
     private final EmbeddingService embeddingService;
-    private final BgeRerankerService rerankerService; // Optional reranker
+    private final JinaRerankerService rerankerService; // Jina API reranker (multilingual)
 
     @Value("${search.rerank.enabled:true}")
     private boolean rerankEnabled;
 
     @Override
     public List<CourseDto> search(CourseSearchRequest req, int page, int size) {
-        // 1. Expand query for better semantic understanding
-        String expandedQuery = expandQuery(req.getKeyword());
+        long current = System.currentTimeMillis();
         
-        // 2. Retrieve candidates using expanded query
-        List<CourseDto> candidates = retrieveCandidates(req, expandedQuery);
-
+        // 1. Retrieve candidates using original query (no expansion)
+        List<CourseDto> candidates = retrieveCandidates(req, req.getKeyword());
+        System.err.println("vector search time " + (System.currentTimeMillis() - current));
+        
         if (candidates.isEmpty()) {
             return Collections.emptyList();
         }
 
-        // 3. Hybrid search: combine vector + BM25 + rerank
+        // 2. Hybrid search: combine vector + BM25 + rerank
         boolean useRerank = rerankEnabled && rerankerService != null && rerankerService.isAvailable() && page == 0;
         List<CourseDto> rankedCandidates = useRerank
-            ? hybridSearchWithRerank(candidates, req.getKeyword(), expandedQuery)
-            : hybridSearch(candidates, req.getKeyword(), expandedQuery);
+            ? hybridSearchWithRerank(candidates, req.getKeyword())
+            : hybridSearch(candidates, req.getKeyword());
 
-        // 4. Paginate results
+        // 3. Paginate results
         return paginate(rankedCandidates, page, size);
     }
 
@@ -60,11 +60,13 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         if (keyword == null || keyword.trim().isEmpty()) {
             keyword = "";
         }
-
+        long current = System.currentTimeMillis();
         float[] embedding = embeddingService.toFloatArray(
                 embeddingService.createEmbedding(keyword.trim())
         );
-        
+//        float[] embedding = 
+//                embeddingService.createEmbedding3(keyword.trim());
+        System.err.println("embedding time "+(System.currentTimeMillis()-current));
         params.put("vector", embedding);
         // Keep candidate pool modest to avoid heavy compute
         int candidateLimit = 100;
@@ -86,7 +88,7 @@ public class CourseSearchServiceImpl implements CourseSearchService{
                 .query(sql, params, new CourseRowMapper());
     }
 
-    private List<CourseDto> hybridSearch(List<CourseDto> candidates, String originalQuery, String expandedQuery) {
+    private List<CourseDto> hybridSearch(List<CourseDto> candidates, String originalQuery) {
         if (originalQuery == null || originalQuery.trim().isEmpty()) {
             for (CourseDto course : candidates) {
                 float quality = calculateQuality(course);
@@ -97,7 +99,6 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         }
         
         String kw = normalizeText(originalQuery);
-        String kwExpanded = normalizeText(expandedQuery);
         
         for (CourseDto course : candidates) {
             // (1) Vector Semantic Similarity
@@ -105,7 +106,7 @@ public class CourseSearchServiceImpl implements CourseSearchService{
             float vectorScore = (float) Math.max(0.0, Math.min(1.0, 1.0 - distance));
             
             // (2) BM25-like Lexical Score
-            float bm25Score = calculateBM25Score(kw, kwExpanded, course);
+            float bm25Score = calculateBM25Score(kw, course);
             
             // (3) Quality Score
             float quality = calculateQuality(course);
@@ -119,26 +120,27 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         return candidates;
     }
 
-    private List<CourseDto> hybridSearchWithRerank(List<CourseDto> candidates, String originalQuery, String expandedQuery) {
+    private List<CourseDto> hybridSearchWithRerank(List<CourseDto> candidates, String originalQuery) {
         if (originalQuery == null || originalQuery.trim().isEmpty()) {
-            return hybridSearch(candidates, originalQuery, expandedQuery);
+            return hybridSearch(candidates, originalQuery);
         }
 
-        // Limit rerank to top-K nearest by vector (reduce to 30 for speed)
+        // Limit rerank to top-K nearest by vector
         int topRerank = Math.min(candidates.size(), 30);
         List<String> documents = candidates.subList(0, topRerank).stream()
                 .map(this::buildCourseText)
                 .collect(java.util.stream.Collectors.toList());
-
-        List<ScoredDocument> scored = rerankerService.batchRerank(expandedQuery.trim(), documents);
+        long current = System.currentTimeMillis();
+        List<ScoredDocument> scored = rerankerService.batchRerank(originalQuery.trim(), documents);
+        System.err.println("rerank time "+(System.currentTimeMillis()-current));
+        current = System.currentTimeMillis();
         if (scored == null || scored.isEmpty()) {
-            return hybridSearch(candidates, originalQuery, expandedQuery);
+            return hybridSearch(candidates, originalQuery);
         }
         Map<Integer, Float> scoreMap = scored.stream()
             .collect(java.util.stream.Collectors.toMap(ScoredDocument::getIndex, ScoredDocument::getScore));
 
         String kw = normalizeText(originalQuery);
-        String kwExpanded = normalizeText(expandedQuery);
         
         for (int i = 0; i < candidates.size(); i++) {
             CourseDto course = candidates.get(i);
@@ -146,7 +148,7 @@ public class CourseSearchServiceImpl implements CourseSearchService{
             float vectorScore = (float) Math.max(0.0, Math.min(1.0, 1.0 - distance));
 
             float rerankScore = i < topRerank ? scoreMap.getOrDefault(i, vectorScore) : vectorScore;
-            float bm25Score = calculateBM25Score(kw, kwExpanded, course);
+            float bm25Score = calculateBM25Score(kw, course);
             float quality = calculateQuality(course);
 
             // Exact title match gets priority
@@ -165,38 +167,8 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         return candidates;
     }
 
-    // Query expansion for semantic understanding
-    private String expandQuery(String query) {
-        if (query == null || query.trim().isEmpty()) {
-            return "";
-        }
-        
-        String normalized = normalizeText(query);
-        Map<String, String> expansions = new HashMap<>();
-        
-        // Vietnamese programming terms
-        expansions.put("lap trinh", "lap trinh code coding programming phat trien");
-        expansions.put("thiet ke", "thiet ke design ui ux");
-        expansions.put("du lieu", "du lieu data database sql");
-        expansions.put("web", "web website frontend backend fullstack");
-        expansions.put("mobile", "mobile app android ios");
-        expansions.put("ai", "ai machine learning ml deep learning");
-        expansions.put("python", "python programming coding");
-        expansions.put("java", "java programming coding spring");
-        expansions.put("javascript", "javascript js typescript react vue angular");
-        
-        // Check for expansion matches
-        for (Map.Entry<String, String> entry : expansions.entrySet()) {
-            if (normalized.contains(entry.getKey())) {
-                return query + " " + entry.getValue();
-            }
-        }
-        
-        return query;
-    }
-    
     // BM25-like lexical scoring for hybrid search
-    private float calculateBM25Score(String queryNorm, String expandedQueryNorm, CourseDto course) {
+    private float calculateBM25Score(String queryNorm, CourseDto course) {
         String title = course.getName() == null ? "" : normalizeText(course.getName());
         String category = course.getCategoryName() == null ? "" : normalizeText(course.getCategoryName());
         String desc = course.getDescription() == null ? "" : normalizeText(course.getDescription());
@@ -214,18 +186,6 @@ public class CourseSearchServiceImpl implements CourseSearchService{
                 score += 0.50f;
             } else if (title.contains(queryNorm)) {
                 score += 0.30f;
-            }
-            
-            // Check for expanded terms
-            String[] expandedTerms = expandedQueryNorm.split(" ");
-            int matchCount = 0;
-            for (String term : expandedTerms) {
-                if (!term.isBlank() && title.contains(term)) {
-                    matchCount++;
-                }
-            }
-            if (expandedTerms.length > 0) {
-                score += (float) matchCount / expandedTerms.length * 0.20f;
             }
         }
         
@@ -245,13 +205,10 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         return Math.min(1.0f, score);
     }
 
-    // Normalize for multilingual/Vietnamese: lower-case, strip accents, collapse spaces
+    // Normalize text: lower-case and collapse spaces only (preserve Vietnamese diacritics)
     private String normalizeText(String s) {
         if (s == null) return "";
-        String lower = s.toLowerCase().trim();
-        String noAccent = java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD)
-                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
-        return noAccent.replaceAll("\\s+", " ");
+        return s.toLowerCase().trim().replaceAll("\\s+", " ");
     }
 
     // Compute lexical coverage: proportion of query tokens found in title tokens

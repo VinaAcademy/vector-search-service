@@ -64,7 +64,7 @@ public class EmbeddingServiceImpl implements EmbeddingService{
     private CourseEmbeddingRepository courseEmbeddingRepository;
 
     //Tạm thời sử dụng OpenAI thay vì model mpnet-base-v2 nên sẽ không init
-    //@PostConstruct
+    @PostConstruct
     public void init() throws ModelNotFoundException, MalformedModelException, IOException {
         Criteria<String, float[]> criteria = Criteria.builder()
                 .optApplication(ai.djl.Application.NLP.TEXT_EMBEDDING)

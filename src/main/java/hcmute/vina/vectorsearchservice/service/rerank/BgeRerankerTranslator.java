@@ -35,29 +35,24 @@ public class BgeRerankerTranslator implements Translator<RankInput, Float> {
 
             long[] inputIds = encoding.getIds();
             long[] attentionMask = encoding.getAttentionMask();
-            long[] tokenTypeIds = encoding.getTypeIds();
 
             // Truncate and pad to fixed maxLength
             int lengthToCopy = Math.min(inputIds.length, maxLength);
             long[] paddedIds = new long[maxLength];
             long[] paddedMask = new long[maxLength];
-            long[] paddedTypeIds = new long[maxLength];
 
             System.arraycopy(inputIds, 0, paddedIds, 0, lengthToCopy);
             System.arraycopy(attentionMask, 0, paddedMask, 0, lengthToCopy);
-            System.arraycopy(tokenTypeIds, 0, paddedTypeIds, 0, lengthToCopy);
 
             // Batch dimension [1, maxLength]
             NDArray idsArray = manager.create(paddedIds).expandDims(0);
             NDArray maskArray = manager.create(paddedMask).expandDims(0);
-            NDArray typeArray = manager.create(paddedTypeIds).expandDims(0);
 
             // Name inputs to help TorchScript binding
             idsArray.setName("input_ids");
             maskArray.setName("attention_mask");
-            typeArray.setName("token_type_ids");
 
-            return new NDList(idsArray, maskArray, typeArray);
+            return new NDList(idsArray, maskArray);
         } catch (Exception e) {
             throw new RuntimeException("Failed to process input for reranking: " + e.getMessage(), e);
         }
