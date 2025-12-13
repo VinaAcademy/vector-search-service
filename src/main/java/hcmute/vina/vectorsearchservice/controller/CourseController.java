@@ -24,12 +24,12 @@ public class CourseController {
     /**
      * Tìm kiếm vector courses theo keyword và filter request
      */
-    @GetMapping("/aisearch")
+    @GetMapping("/search")
     public ApiResponse<Page<CourseDto>> searchCourses(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "9") int size,
-            @RequestParam(required = false) Boolean semantic,
+              @RequestParam(defaultValue = "9") int size,
+          @RequestParam(required = false) Boolean semantic,
             @ModelAttribute CourseSearchRequest req 
     ) {
         // Gán keyword từ param nếu có
