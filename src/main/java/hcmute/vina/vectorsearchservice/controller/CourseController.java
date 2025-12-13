@@ -28,7 +28,7 @@ public class CourseController {
     public ApiResponse<Page<CourseDto>> searchCourses(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "2") int size,
+            @RequestParam(defaultValue = "9") int size,
             @RequestParam(required = false) Boolean semantic,
             @ModelAttribute CourseSearchRequest req 
     ) {
