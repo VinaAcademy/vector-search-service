@@ -28,7 +28,7 @@ public class DatabaseMigrationService {
 
   @PostConstruct
   public void migrate() {
-	  //ensureData();
+	  ensureData();
   }
 
   private void ensureData() {
@@ -36,7 +36,7 @@ public class DatabaseMigrationService {
 
     try {
     	embeddingService.migrateAllCourse();
-    	log.debug("Migrate all courses successfully");
+    	log.info("Migrate all courses successfully");
     } catch (Exception ex) {
       log.error("Failed to migrate all records course", ex);
       throw new RuntimeException("Failed to migrate all records course", ex);

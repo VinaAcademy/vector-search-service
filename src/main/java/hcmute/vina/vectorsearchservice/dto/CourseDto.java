@@ -54,5 +54,7 @@ public class CourseDto extends BaseDto {
 
     // Distance from query embedding (cosine distance: 1 - cosine_similarity)
     private double distance;
+    
+    private String instructorName;
 
 }

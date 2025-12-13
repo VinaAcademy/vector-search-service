@@ -166,13 +166,15 @@ public class EmbeddingServiceImpl implements EmbeddingService{
     @Override
     public List<CourseTransfer> getCoursesForEmbedding() {
         String sql = """
-            SELECT c.id, c.name, c.description, u.full_name
+            SELECT c.id, c.name, c.description, u.full_name, c.name as category_name, c.price
             FROM courses c
-            INNER JOIN course_instructor ci 
+            INNER JOIN course_instructor ci
         			ON c.id = ci.course_id
         			AND ci.is_owner = TRUE
         	INNER JOIN users u
         			ON ci.user_id = u.id
+        	INNER JOIN categories cate 
+        			ON c.category_id = cate.id
             WHERE status = 'PUBLISHED'
         """;
         
@@ -181,6 +183,8 @@ public class EmbeddingServiceImpl implements EmbeddingService{
                 .courseName(rs.getString("name"))
                 .description(rs.getString("description"))
                 .instructorName(rs.getString("full_name"))
+                .categoryName(rs.getString("category_name"))
+                .price(rs.getBigDecimal("price"))
                 .build());
     }
     
@@ -195,7 +199,7 @@ public class EmbeddingServiceImpl implements EmbeddingService{
     
     public void updateCourseEmbedding(CourseTransfer course) {
 
-        String text = course.getCourseName() + ". " + cleanHtml(course.getDescription()) + ". " +course.getInstructorName();
+        String text = course.getCourseName() + " | " + cleanHtml(course.getDescription()) + " | " +course.getInstructorName() + " | " +course.getCategoryName() + " | " + course.getPrice().toPlainString();
 
         //float[] vector = toFloatArray(createEmbedding(text));
         float[] vector = toFloatArray(createEmbedding(text));
@@ -211,12 +215,12 @@ public class EmbeddingServiceImpl implements EmbeddingService{
     public void migrateAllCourse() {
     	List<CourseTransfer> courseTransfers = getCoursesForEmbedding();
     	
-    	log.debug("Size course transfer {}", courseTransfers.size());
+    	log.info("Size course transfer {}", courseTransfers.size());
     	courseTransfers.forEach(ct->{
-        	Optional<CourseEmbedding> existing = courseEmbeddingRepository.findById(ct.getCourseId());
-        	if (existing.isPresent()) {
+        	Boolean existing = courseEmbeddingRepository.existsById(ct.getCourseId());
+        	if (!existing) {
         		updateCourseEmbedding(ct);
-        		log.debug("setup vector for course {}",ct.getCourseId());
+        		log.info("setup vector for course {}",ct.getCourseId());
         	}
 
     	});

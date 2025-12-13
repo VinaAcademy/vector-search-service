@@ -33,6 +33,8 @@ public class CourseRowMapper implements RowMapper<CourseDto> {
         courseDto.setTotalStudent(rs.getLong("total_student"));
         courseDto.setTotalSection(rs.getLong("total_section"));
         courseDto.setTotalLesson(rs.getLong("total_lesson"));
+        
+        courseDto.setInstructorName(rs.getString("instructor_name"));
 
         // Optional: distance column from query for semantic blending
         try {

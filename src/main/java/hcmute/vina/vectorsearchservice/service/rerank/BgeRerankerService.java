@@ -23,7 +23,7 @@ public class BgeRerankerService {
     @Value("${search.rerank.batchSize:32}")
     private int batchSize;
 
-    @PostConstruct
+//    @PostConstruct
     public void init() {
         if (!rerankEnabled) {
             predictor = null;

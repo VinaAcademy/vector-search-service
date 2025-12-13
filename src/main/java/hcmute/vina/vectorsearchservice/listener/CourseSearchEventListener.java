@@ -31,10 +31,12 @@ public class CourseSearchEventListener {
                 throw new RuntimeException("CourseEmbeddedEvent is null or missing id");
             }
 
-            String text = String.join(". ",
+            String text = String.join(" | ",
                     nullToEmpty(courseEmbeddedEvent.getTitle()),
                     nullToEmpty(courseEmbeddedEvent.getDescription()),
-                    nullToEmpty(courseEmbeddedEvent.getInstructorName())
+                    nullToEmpty(courseEmbeddedEvent.getInstructorName()),
+                    nullToEmpty(courseEmbeddedEvent.getCategoryName()),
+                    nullToEmpty(courseEmbeddedEvent.getPrice().toPlainString())
             );
 
             float[] vector = embeddingService.toFloatArray(embeddingService.createEmbedding(text));

@@ -80,11 +80,16 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         params.put("offset", 0);
 
         String sql = """
-            SELECT c.*, ce.embedding, cate.name as category_name,
+            SELECT c.*, ce.embedding, cate.name as category_name, u.full_name as instructor_name, 
                    (ce.embedding <-> (:vector)::vector) AS distance
             FROM courses c
             INNER JOIN course_embedding ce ON c.id = ce.course_id
             INNER JOIN categories cate ON c.category_id = cate.id
+            INNER JOIN course_instructor ci
+        			ON c.id = ci.course_id
+            INNER JOIN users u
+        			ON ci.user_id = u.id
+        	
             """ + whereClause + """
             ORDER BY ce.embedding <-> (:vector)::vector
             LIMIT :limit OFFSET :offset
@@ -243,8 +248,6 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         
         // Ưu tiên Name và Category
         if (course.getName() != null) sb.append(course.getName()).append(" | ");
-        if (course.getCategoryName() != null) sb.append(course.getCategoryName()).append(" | ");
-        
         // Description kept concise; shorter helps reranker latency
         if (course.getDescription() != null) {
             String desc = course.getDescription();
@@ -253,6 +256,10 @@ public class CourseSearchServiceImpl implements CourseSearchService{
             }
             sb.append(desc);
         }
+        if (course.getInstructorName() != null) sb.append(course.getInstructorName()).append(" | ");
+        if (course.getCategoryName() != null) sb.append(course.getCategoryName()).append(" | ");
+        if (course.getPrice() != null) sb.append(course.getPrice().toPlainString()).append(" | ");
+
         
         return sb.toString().trim();
     }
