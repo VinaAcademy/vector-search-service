@@ -1,6 +1,6 @@
 # Docker Environment Configuration
 server:
-  port: 8086
+  port: ${SERVER_PORT:8080}
 
 spring:
   application:
@@ -51,11 +51,15 @@ spring:
 
 eureka:
   client:
-    service-url:
-      defaultZone: ${EUREKA_CLIENT_SERVICE_URL_DEFAULT_ZONE:http://discovery-service:8761/eureka/}
+    serviceUrl:
+      defaultZone: ${EUREKA_CLIENT_SERVICE_DEFAULTZONE:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
   instance:
+    ip-address: ${EUREKA_INSTANCE_IP_ADDRESS:localhost}
     prefer-ip-address: true
-    hostname: ${HOSTNAME:localhost}
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
 
 openai:
   api:
