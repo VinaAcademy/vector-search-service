@@ -80,9 +80,6 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         params.put("offset", 0);
         System.err.println(whereClause);
         
-        boolean hasKeyword = keyword != null && !keyword.isEmpty();
-        String orderByClause = CourseSqlBuilder.buildOrderBy(req, hasKeyword);
-        
         String sql = """
             SELECT c.*, ce.embedding, cate.slug as category_slug, u.full_name as instructor_name, cate.name as category_name,
                    (ce.embedding <-> (:vector)::vector) AS distance
@@ -93,9 +90,9 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         			ON c.id = ci.course_id
             INNER JOIN users u
         			ON ci.user_id = u.id
-        	
-            """ + whereClause + orderByClause + """
-            
+        	 
+            """ + whereClause + """
+             ORDER BY ce.embedding <-> (:vector)::vector
             LIMIT :limit OFFSET :offset
             """;
 

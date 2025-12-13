@@ -24,7 +24,7 @@ public class CourseController {
     /**
      * Tìm kiếm vector courses theo keyword và filter request
      */
-    @GetMapping("/search")
+    @GetMapping("/aisearch")
     public ApiResponse<Page<CourseDto>> searchCourses(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
