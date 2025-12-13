@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import hcmute.vina.vectorsearchservice.constant.KafkaTopic;
 import hcmute.vina.vectorsearchservice.entity.CourseEmbedding;
 import hcmute.vina.vectorsearchservice.repository.CourseEmbeddingRepository;
+import hcmute.vina.vectorsearchservice.repository.CourseEmbeddingRepositoryCustom;
 import hcmute.vina.vectorsearchservice.service.EmbeddingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +22,8 @@ import vn.vinaacademy.kafka.event.CourseEmbeddedEvent;
 @RequiredArgsConstructor
 public class CourseSearchEventListener {
     private final EmbeddingService embeddingService;
-    private final CourseEmbeddingRepository courseEmbeddingRepository;
+    private final CourseEmbeddingRepositoryCustom courseEmbeddingRepository;
+    private final CourseEmbeddingRepository realCourseEmbeddingRepository;
 
     @KafkaListener(topics = KafkaTopic.VECTOR_TOPIC, groupId = "${spring.kafka.consumer.group-id:vector-group}",
             containerFactory = "kafkaListenerContainerFactory")
