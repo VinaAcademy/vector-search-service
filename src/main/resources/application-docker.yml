@@ -1,0 +1,70 @@
+# Docker Environment Configuration
+server:
+  port: 8086
+
+spring:
+  application:
+    name: vector-search-service
+  datasource:
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.postgresql.Driver}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/vinaacademy}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    hikari:
+      auto-commit: ${SPRING_DATASOURCE_HIKARI_AUTO_COMMIT:true}
+      minimum-idle: ${SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE:5}
+      maximum-pool-size: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:10}
+      connection-timeout: 30000
+      max-lifetime: 1800000
+      pool-name: HikariPool
+  jpa:
+    properties:
+      hibernate:
+        default_batch_fetch_size: ${SPRING_JPA_HIBERNATE_DEFAULT_BATCH_FETCH_SIZE:20}
+        jdbc:
+          batch_size: ${SPRING_JPA_HIBERNATE_JDBC_BATCH_SIZE:20}
+          lob:
+            non_contextual_creation: ${SPRING_JPA_HIBERNATE_JDBC_LOB_NON_CONTEXTUAL_CREATION:true}
+        format_sql: ${SPRING_JPA_HIBERNATE_FORMAT_SQL:false}
+        order_updates: ${SPRING_JPA_HIBERNATE_ORDER_UPDATES:true}
+        use_sql_comments: ${SPRING_JPA_HIBERNATE_USE_SQL_COMMENTS:false}
+        order_inserts: ${SPRING_JPA_HIBERNATE_ORDER_INSERTS:true}
+        show_sql: ${SPRING_JPA_HIBERNATE_SHOW_SQL:false}
+    generate-ddl: ${SPRING_JPA_GENERATE_DDL:true}
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+    database-platform: ${SPRING_JPA_DATABASE_PLATFORM:org.hibernate.dialect.PostgreSQLDialect}
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+    consumer:
+      group-id: ${SPRING_KAFKA_CONSUMER_GROUP_ID:vector-group}
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.vinaacademy.platform.feature.course.dto
+        spring.json.value.default.type: com.vinaacademy.platform.feature.course.dto.CourseEmbeddedEvent
+    producer:
+      retries: ${SPRING_KAFKA_PRODUCER_RETRIES:3}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICE_URL_DEFAULT_ZONE:http://discovery-service:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    hostname: ${HOSTNAME:localhost}
+
+openai:
+  api:
+    key: ${OPENAI_API_KEY:}
+
+jina:
+  api:
+    key: ${JINA_API_KEY:}
+
+search:
+  rerank:
+    enabled: true
