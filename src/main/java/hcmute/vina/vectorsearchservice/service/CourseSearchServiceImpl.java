@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -32,7 +35,7 @@ public class CourseSearchServiceImpl implements CourseSearchService{
     private boolean rerankEnabledDefault;
 
     @Override
-    public List<CourseDto> search(CourseSearchRequest req, int page, int size) {
+    public Page<CourseDto> search(CourseSearchRequest req, int page, int size) {
         long current = System.currentTimeMillis();
         
         // 1. Retrieve candidates using original query (no expansion)
@@ -40,7 +43,7 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         System.err.println("vector search time " + (System.currentTimeMillis() - current));
         
         if (candidates.isEmpty()) {
-            return Collections.emptyList();
+            return Page.empty(PageRequest.of(page, size));
         }
  
         // 2. Hybrid search: combine vector + BM25 + rerank
@@ -269,15 +272,16 @@ public class CourseSearchServiceImpl implements CourseSearchService{
         return score;
     }
 
-    private List<CourseDto> paginate(List<CourseDto> courses, int page, int size) {
+    private Page<CourseDto> paginate(List<CourseDto> courses, int page, int size) {
         int start = page * size;
         int end = Math.min(start + size, courses.size());
 
         if (start >= courses.size()) {
-            return Collections.emptyList();
+            return Page.empty(PageRequest.of(page, size));
         }
 
-        return courses.subList(start, end);
+        List<CourseDto> pageContent = courses.subList(start, end);
+        return new PageImpl<>(pageContent, PageRequest.of(page, size), courses.size());
     }
 }
 

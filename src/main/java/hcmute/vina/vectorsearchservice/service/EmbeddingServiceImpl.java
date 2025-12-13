@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import javax.management.RuntimeErrorException;
@@ -209,8 +210,16 @@ public class EmbeddingServiceImpl implements EmbeddingService{
     @Override
     public void migrateAllCourse() {
     	List<CourseTransfer> courseTransfers = getCoursesForEmbedding();
+    	
     	log.debug("Size course transfer {}", courseTransfers.size());
-    	courseTransfers.forEach(this::updateCourseEmbedding);
+    	courseTransfers.forEach(ct->{
+        	Optional<CourseEmbedding> existing = courseEmbeddingRepository.findById(ct.getCourseId());
+        	if (existing.isPresent()) {
+        		updateCourseEmbedding(ct);
+        		log.debug("setup vector for course {}",ct.getCourseId());
+        	}
+
+    	});
 
     }
     

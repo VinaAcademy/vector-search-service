@@ -1,13 +1,17 @@
 package hcmute.vina.vectorsearchservice.controller;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.data.domain.Page;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import hcmute.vina.vectorsearchservice.dto.CourseDto;
 import hcmute.vina.vectorsearchservice.dto.request.CourseSearchRequest;
 import hcmute.vina.vectorsearchservice.service.CourseSearchService;
 import lombok.RequiredArgsConstructor;
-
-import org.springframework.http.ResponseEntity;
-import java.util.List;
+import vn.vinaacademy.common.response.ApiResponse;
 
 @RestController
 @RequiredArgsConstructor
@@ -20,8 +24,8 @@ public class CourseController {
     /**
      * Tìm kiếm vector courses theo keyword và filter request
      */
-    @GetMapping("/search")
-    public ResponseEntity<List<CourseDto>> searchCourses(
+    @GetMapping("/aisearch")
+    public ApiResponse<Page<CourseDto>> searchCourses(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "2") int size,
@@ -37,7 +41,6 @@ public class CourseController {
             req.setSemantic(semantic);
         }
 
-        List<CourseDto> results = courseSearchService.search(req, page, size);
-        return ResponseEntity.ok(results);
+        return ApiResponse.success(courseSearchService.search(req, page, size));
     }
 }
