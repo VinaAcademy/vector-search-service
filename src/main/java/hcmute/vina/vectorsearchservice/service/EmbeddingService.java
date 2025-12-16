@@ -12,5 +12,6 @@ public interface EmbeddingService {
 	List<CourseTransfer> getCoursesForEmbedding();
 	void migrateAllCourse();
 	float[] toFloatArray(List<Float> list);
+	public String cleanHtml(String htmlContent);
 
 }

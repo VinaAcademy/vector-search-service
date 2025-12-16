@@ -133,51 +133,80 @@ public class CourseSearchServiceImpl implements CourseSearchService{
     }
 
     private List<CourseDto> hybridSearchWithRerank(List<CourseDto> candidates, String originalQuery) {
+
         if (originalQuery == null || originalQuery.trim().isEmpty()) {
             return hybridSearch(candidates, originalQuery);
         }
 
-        // Limit rerank to top-K nearest by vector
         int topRerank = Math.min(candidates.size(), 20);
+
+       
         List<String> documents = candidates.subList(0, topRerank).stream()
                 .map(this::buildCourseText)
-                .collect(java.util.stream.Collectors.toList());
+                .toList();
         long current = System.currentTimeMillis();
         List<ScoredDocument> scored = rerankerService.batchRerank(originalQuery.trim(), documents);
         System.err.println("rerank time "+(System.currentTimeMillis()-current));
-        current = System.currentTimeMillis();
         if (scored == null || scored.isEmpty()) {
             return hybridSearch(candidates, originalQuery);
         }
-        Map<Integer, Float> scoreMap = scored.stream()
-            .collect(java.util.stream.Collectors.toMap(ScoredDocument::getIndex, ScoredDocument::getScore));
+
+        Map<Integer, Float> rerankScoreMap = scored.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        ScoredDocument::getIndex,
+                        ScoredDocument::getScore
+                ));
 
         String kw = normalizeText(originalQuery);
-        
-        for (int i = 0; i < candidates.size(); i++) {
-            CourseDto course = candidates.get(i);
-            double distance = course.getDistance();
-            float vectorScore = (float) Math.max(0.0, Math.min(1.0, 1.0 - distance));
 
-            float rerankScore = i < topRerank ? scoreMap.getOrDefault(i, vectorScore) : vectorScore;
+        
+        List<CourseDto> top = candidates.subList(0, topRerank);
+        for (int i = 0; i < top.size(); i++) {
+            CourseDto course = top.get(i);
+
+            float vectorScore = (float) Math.max(0.0, Math.min(1.0, 1.0 - course.getDistance()));
             float bm25Score = calculateBM25Score(kw, course);
             float quality = calculateQuality(course);
 
-            // Exact title match gets priority
-            String title = course.getName() == null ? "" : normalizeText(course.getName());
-//            if (!title.isEmpty() && title.equals(kw)) {
-//                course.setRelevanceScore(0.99f);
-//                continue;
-//            }
+            float rerankScore = rerankScoreMap.getOrDefault(i, 0f); 
 
-            // Hybrid with Rerank: Rerank (55%) + Vector (20%) + BM25 (15%) + Quality (10%)
-            float finalScore = (rerankScore * 0.55f) + (vectorScore * 0.20f) + (bm25Score * 0.15f) + (quality * 0.10f);
-            course.setRelevanceScore(Math.max(0f, Math.min(1f, finalScore)));
+            float finalScore =
+                    (rerankScore * 0.55f) +
+                    (vectorScore * 0.25f) +
+                    (bm25Score * 0.10f) +
+                    (quality * 0.10f);
+
+            course.setRelevanceScore(finalScore);
         }
 
-        candidates.sort((c1, c2) -> Float.compare(c2.getRelevanceScore(), c1.getRelevanceScore()));
-        return candidates;
+        top.sort((c1, c2) -> Float.compare(
+                c2.getRelevanceScore(),
+                c1.getRelevanceScore()
+        ));
+
+        List<CourseDto> rest = candidates.subList(topRerank, candidates.size());
+
+        for (CourseDto course : rest) {
+            float vectorScore = (float) Math.max(0.0, Math.min(1.0, 1.0 - course.getDistance()));
+            float bm25Score = calculateBM25Score(kw, course);
+            float quality = calculateQuality(course);
+
+            float finalScore =
+                    (vectorScore * 0.70f) +
+                    (bm25Score * 0.20f) +
+                    (quality * 0.10f);
+
+            course.setRelevanceScore(finalScore);
+        }
+
+        // ===== 5. Merge result (tiered ranking) =====
+        List<CourseDto> result = new java.util.ArrayList<>(candidates.size());
+        result.addAll(top);
+        result.addAll(rest);
+
+        return result;
     }
+
 
     // BM25-like lexical scoring for hybrid search
     private float calculateBM25Score(String queryNorm, CourseDto course) {
@@ -255,7 +284,8 @@ public class CourseSearchServiceImpl implements CourseSearchService{
             if (desc.length() > 500) {
                 desc = desc.substring(0, 500);
             }
-            sb.append(desc);
+            
+            sb.append(embeddingService.cleanHtml(desc));
         }
         if (course.getInstructorName() != null) sb.append(course.getInstructorName()).append(" | ");
         if (course.getCategoryName() != null) sb.append(course.getCategoryName()).append(" | ");
@@ -266,19 +296,22 @@ public class CourseSearchServiceImpl implements CourseSearchService{
     }
 
     private float calculateQuality(CourseDto course) {
-        float score = 0;
-        
+        float score = 0f;
+
+        // Enhance course if rating good
         if (course.getRating() > 0) {
-            score += (course.getRating() / 5.0) * 0.6;
+            score += (course.getRating() / 5.0f) * 0.01f;
         }
-        
-        if (course.getTotalStudent() > 0) {
-            double normalized = Math.log(course.getTotalStudent() + 1) / Math.log(10000);
-            score += Math.min(normalized, 1.0) * 0.4;
+
+        // (log-scaled, max ~0.004)
+        if (course.getTotalStudent() > 10) {
+            double normalized = Math.log(course.getTotalStudent()) / Math.log(10000);
+            score += Math.min((float) normalized, 1.0f) * 0.004f;
         }
-        
+
         return score;
     }
+
 
     private Page<CourseDto> paginate(List<CourseDto> courses, int page, int size) {
         int start = page * size;

@@ -133,7 +133,8 @@ public class EmbeddingServiceImpl implements EmbeddingService{
     }
     
     
-    private String cleanHtml(String htmlContent) {
+    @Override
+    public String cleanHtml(String htmlContent) {
         if (htmlContent == null || htmlContent.isEmpty()) {
             return "";
         }
